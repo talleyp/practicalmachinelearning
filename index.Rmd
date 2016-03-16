@@ -1,0 +1,105 @@
+---
+title: "Practical Machine Learning Course project"
+author: "Patrick Talley"
+date: "March 16, 2016"
+output: 
+  html_document: 
+    keep_md: yes
+---
+
+
+# Load the data and libraries
+
+```{r}
+library(caret)
+library(rpart)
+library(ggplot2)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(randomForest)
+library(gridExtra)
+setwd("D:/Documents/CourseraR/machineLearning")
+set.seed(1234)
+training <- read.csv("pml-training.csv", na.strings = c("NA",""))
+test <- read.csv("pml-testing.csv", na.strings = c("NA",""))
+```
+
+#Loading and cleaning data
+
+Because the first 6 were index, name and time variable they were ignored for the prediction.
+
+```{r}
+inTrain <- createDataPartition(y=training$classe, p=0.6, list=FALSE)
+train <- training[inTrain, -c(1:6)]
+cval <- training[-inTrain, ]
+```
+
+Create a subset without NZV
+
+```{r}
+myDataNZV <- nearZeroVar(train, saveMetrics=TRUE)
+nameNZM <- row.names(myDataNZV[which(myDataNZV$nzv == TRUE, arr.ind = T),])
+trainNZV <- names(train) %in% nameNZM
+subtrain <- train[!trainNZV]
+```
+
+There were columns with large number of NAs so I removed those columns
+
+```{r}
+avgna <- function(x) {
+    n <- length(x)
+    na.count <- sum(is.na(x))
+    return((n - na.count)/n)
+}
+
+nacols <- apply(subtrain, 2, avgna)
+subtrain <- subtrain[, nacols > 0.9]
+```
+
+#Rpart model
+
+```{r}
+set.seed(1234)
+rpartMod <- train(classe~., method = "rpart", data = subtrain)
+print(rpartMod$finalModel)
+```
+
+```{r}
+fancyRpartPlot(rpartMod$finalModel,cex=.5,under.cex=1,shadow.offset=0)
+```
+
+```{r}
+classepredict=predict(rpartMod,cval)
+confusionMatrix(cval$classe,classepredict)
+```
+
+This model did not work well for prediction so the random forest was looked at next because it is able to handle higher number of variables better than rpart.
+
+#Random Forest Model
+
+Random forest with 4 fold cross-validation
+
+```{r}
+rfMod <- train(classe ~., method = "rf",
+               trControl=trainControl(method = "cv", number = 4), 
+               data=subtrain)
+
+print(rfMod)
+```
+
+```{r}
+varImp(rfMod)
+```
+
+```{r}
+classepredict2=predict(rfMod,cval)
+confusionMatrix(cval$classe,classepredict2)
+```
+
+This model did a much better job at predicting the cross validation set therefore it was used for the final test set for prediction.
+
+```{r}
+testinganswers=predict(rfMod, newdata=test)
+print(testinganswers)
+```
